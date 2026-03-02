@@ -579,12 +579,12 @@ def index():
 def health():
     return {'status': 'ok', 'time': datetime.now().isoformat()}
 
-# ========== ЗАПУСК БОТА ==========
+# Запуск бота
 if __name__ == '__main__':
     # Создаем приложение бота
     application = Application.builder().token(TOKEN).build()
     
-    # Добавляем все обработчики команд
+    # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("track", track_command))
     application.add_handler(CommandHandler("mytracks", my_tracks))
@@ -594,12 +594,9 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CommandHandler("help", help_command))
     
-    # Настраиваем периодическую проверку (каждый час)
-    job_queue = application.job_queue
-    job_queue.run_repeating(check_all_tracks, interval=3600, first=30)
-    
     # Определяем режим запуска
     if os.environ.get('RENDER'):
+        # На Render.com используем вебхук
         port = int(os.environ.get('PORT', 10000))
         application.run_webhook(
             listen="0.0.0.0",
@@ -608,19 +605,10 @@ if __name__ == '__main__':
             webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/webhook"
         )
     else:
+        # Локально используем поллинг
         print("=" * 50)
         print("БОТ ЗАПУЩЕН В РЕЖИМЕ ПОЛЛИНГА")
         print("=" * 50)
-        print("Команды бота:")
-        print("/track @user1 @user2 - добавить пару")
-        print("/mytracks - список пар")
-        print("/check [ID] - проверить")
-        print("/history [ID] - история")
-        print("/analyze @user - анализ профиля")
-        print("/stop [ID] - удалить пару")
-        print("/help - помощь")
-        print("=" * 50)
         print("Для остановки нажмите Ctrl+C")
         print("=" * 50)
-        
         application.run_polling()
