@@ -24,10 +24,10 @@ app = Flask(__name__)
 # Файлы для хранения данных
 USERS_FILE = "users.json"
 
-# Создаем Bot отдельно (для вебхука)
+# Создаем Bot отдельно
 bot = Bot(token=TOKEN)
 
-# Создаем Application (НО ЗАПОЛНИМ ПОЗЖЕ)
+# Глобальная переменная для Application
 application = None
 
 # Функции для работы с данными
@@ -61,22 +61,34 @@ def webhook():
     """Обработка вебхуков от Telegram"""
     global application
     
-    # Получаем обновление от Telegram
-    update_json = request.get_json(force=True)
-    update = Update.de_json(update_json, bot)  # Используем отдельный bot
+    # Проверяем, инициализирован ли application
+    if application is None:
+        logger.error("Application не инициализирован в webhook!")
+        return 'Application not initialized', 500
     
-    # Создаем новый event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        if application:
+        # Получаем обновление от Telegram
+        update_json = request.get_json(force=True)
+        update = Update.de_json(update_json, bot)
+        
+        # Создаем новый event loop для каждого запроса
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            # Обрабатываем обновление
             loop.run_until_complete(application.process_update(update))
-        else:
-            logger.error("Application не инициализирован!")
-    finally:
-        loop.close()
-    
-    return 'OK', 200
+            logger.info(f"Обработан update: {update.update_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при обработке update: {e}")
+            return 'Error processing update', 500
+        finally:
+            loop.close()
+        
+        return 'OK', 200
+        
+    except Exception as e:
+        logger.error(f"Ошибка в webhook: {e}")
+        return 'Error', 500
 
 @app.route('/')
 def index():
@@ -84,31 +96,37 @@ def index():
 
 @app.route('/health')
 def health():
-    return {'status': 'ok', 'time': datetime.now().isoformat()}
+    return {'status': 'ok', 'time': datetime.now().isoformat()}, 200
+
+# Функция для инициализации приложения
+def init_application():
+    global application
+    if application is None:
+        logger.info("Инициализация Application...")
+        application = Application.builder().token(TOKEN).build()
+        
+        # Добавляем обработчики команд
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        
+        # Инициализируем в отдельном цикле событий
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(application.initialize())
+            logger.info("Application успешно инициализирован!")
+        finally:
+            loop.close()
+    
+    return application
 
 # Запуск бота
 if __name__ == '__main__':
-    # Создаем и инициализируем Application
-    application = Application.builder().token(TOKEN).build()
+    # Инициализируем application ДО запуска Flask
+    init_application()
     
-    # Добавляем обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    
-    # Инициализируем Application
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(application.initialize())
-    
-    print("=" * 50)
-    print("Бот запущен на Render!")
-    print("=" * 50)
-    
-    # Запускаем вебхук
     port = int(os.environ.get('PORT', 10000))
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=TOKEN,
-        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/webhook"
-    )
+    logger.info(f"Запуск веб-сервера на порту {port}")
+    
+    # Запускаем Flask (НЕ запускаем run_webhook, так как он блокирует Flask)
+    app.run(host='0.0.0.0', port=port)
