@@ -3,7 +3,7 @@ import json
 import asyncio
 from datetime import datetime
 from flask import Flask, request
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, ContextTypes
 import logging
 
@@ -24,7 +24,10 @@ app = Flask(__name__)
 # Файлы для хранения данных
 USERS_FILE = "users.json"
 
-# Создаем Application (НО НЕ ЗАПУСКАЕМ)
+# Создаем Bot отдельно (для вебхука)
+bot = Bot(token=TOKEN)
+
+# Создаем Application (НО ЗАПОЛНИМ ПОЗЖЕ)
 application = None
 
 # Функции для работы с данными
@@ -57,13 +60,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def webhook():
     """Обработка вебхуков от Telegram"""
     global application
-    update = Update.de_json(request.get_json(force=True), application.bot)
     
-    # Важно: создаем новый event loop для каждого запроса
+    # Получаем обновление от Telegram
+    update_json = request.get_json(force=True)
+    update = Update.de_json(update_json, bot)  # Используем отдельный bot
+    
+    # Создаем новый event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(application.process_update(update))
+        if application:
+            loop.run_until_complete(application.process_update(update))
+        else:
+            logger.error("Application не инициализирован!")
     finally:
         loop.close()
     
@@ -87,10 +96,13 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("help", help_command))
     
     # Инициализируем Application
-    import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(application.initialize())
+    
+    print("=" * 50)
+    print("Бот запущен на Render!")
+    print("=" * 50)
     
     # Запускаем вебхук
     port = int(os.environ.get('PORT', 10000))
