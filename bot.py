@@ -24,8 +24,8 @@ app = Flask(__name__)
 # Файлы для хранения данных
 USERS_FILE = "users.json"
 
-# ==== ГЛОБАЛЬНОЕ СОЗДАНИЕ APPLICATION (ВАЖНО!) ====
-application = Application.builder().token(TOKEN).build()
+# Создаем Application (НО НЕ ЗАПУСКАЕМ)
+application = None
 
 # Функции для работы с данными
 def load_data(filename):
@@ -52,16 +52,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Бот в процессе разработки. Скоро будут добавлены новые функции!"
     )
 
-# Добавляем обработчики команд
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
-
 # Flask routes
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Обработка вебхуков от Telegram"""
+    global application
     update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
+    
+    # Важно: создаем новый event loop для каждого запроса
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(application.process_update(update))
+    finally:
+        loop.close()
+    
     return 'OK', 200
 
 @app.route('/')
@@ -74,6 +79,20 @@ def health():
 
 # Запуск бота
 if __name__ == '__main__':
+    # Создаем и инициализируем Application
+    application = Application.builder().token(TOKEN).build()
+    
+    # Добавляем обработчики команд
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    
+    # Инициализируем Application
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
+    
+    # Запускаем вебхук
     port = int(os.environ.get('PORT', 10000))
     application.run_webhook(
         listen="0.0.0.0",
